@@ -333,8 +333,8 @@ class SegmentationApplication(BaseApplication):
                     # look at binarised labels: sort them
                     if self.segmentation_param.mix_match:
                         # sum up the positive labels to sort by their volumes
-                        inds1 = tf.argsort(tf.map_fn(tf.reduce_sum, tf.cast(d_dict['label'], tf.int64)))
-                        inds2 = tf.argsort(tf.map_fn(tf.reduce_sum, tf.cast(d_dict_to_mix['label'] > 0, tf.int64)))
+                        inds1 = tf.contrib.framework.argsort(tf.map_fn(tf.reduce_sum, tf.cast(d_dict['label'], tf.int64)))
+                        inds2 = tf.contrib.framework.argsort(tf.map_fn(tf.reduce_sum, tf.cast(d_dict_to_mix['label'] > 0, tf.int64)))
                         for field in [field for field in mix_fields if field in d_dict]:
                             d_dict[field] = tf.gather(d_dict[field], indices=inds1)
                             # note: sorted for opposite directions for d_dict_to_mix 
