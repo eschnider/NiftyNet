@@ -57,6 +57,10 @@ SUPPORTED_NETWORK = {
         'niftynet.network.dense_vnet.DenseVNet',
     "deepmedic":
         'niftynet.network.deepmedic.DeepMedic',
+    "ownnet2":
+        'niftynet.network.ownnet2.Ownnet2',
+    "ownnet2b":
+        'niftynet.network.ownnet2b.Ownnet2b',
     "scalenet":
         'niftynet.network.scalenet.ScaleNet',
     "holisticnet":
