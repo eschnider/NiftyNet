@@ -99,6 +99,8 @@ SUPPORTED_LOSS_SEGMENTATION = {
         'niftynet.layer.loss_segmentation.generalised_dice_loss',
     "DicePlusXEnt":
         'niftynet.layer.loss_segmentation.dice_plus_xent_loss',
+    "SoftDice":
+        'niftynet.layer.loss_segmentation.dice_soft_loss',
     "WGDL":
         'niftynet.layer.loss_segmentation.generalised_wasserstein_dice_loss',
     "SensSpec":
