@@ -86,12 +86,12 @@ class Ownnet2e(BaseNet):
             {'name': 'conv_1_0', 'n_features': 16, 'kernels': (3, 3, 3, 3), 'repeat': 1},
             {'name': 'conv_down_1_1', 'n_features': 32, 'kernels': (3), 'repeat': 1},
             {'name': 'conv_1_1', 'n_features': 32, 'kernels': (3, 3), 'repeat': 1},
-            {'name': 'linear_upsampling_conv', 'n_features': 64, 'kernel_size': 3, 'repeat': 1}]
+            {'name': 'linear_upsampling'}]
 
         self.giant_layers = [
-            {'name': 'conv_dil_wide_1', 'n_features': 4, 'kernels': (3, 3, 3, 3), 'repeat': 1},
-            {'name': 'conv_dil_wide_2', 'n_features': 8, 'kernels': (3, 3, 3, 3), 'repeat': 1},
-            {'name': 'conv_dil_wide_3', 'n_features': 8, 'kernels': (3), 'repeat': 1}]
+            {'name': 'conv_dil_wide_1', 'n_features': 1, 'kernels': (3, 3, 3, 3), 'repeat': 1},
+            {'name': 'conv_dil_wide_2', 'n_features': 2, 'kernels': (3, 3, 3, 3), 'repeat': 1},
+            {'name': 'conv_dil_wide_3', 'n_features': 4, 'kernels': (3), 'repeat': 1}]
 
         self.crop_diff = 32
 
@@ -210,7 +210,7 @@ class Ownnet2e(BaseNet):
         layer_instances.append((crop_op, full_res_256))
 
         # skip connection
-        flow = ElementwiseLayer('CONCAT')(first_down, full_res_256)
+        flow = ElementwiseLayer('CONCAT')(flow, full_res_256)
 
         # crop 128x128x128 from original 256x256x256 to make a skip connection later
         crop_op = CropLayer(border=64, name='cropping_input')
@@ -228,7 +228,7 @@ class Ownnet2e(BaseNet):
             w_initializer=self.initializers['w'],
             w_regularizer=self.regularizers['w'],
             name=params['name'])
-        flow = first_conv_layer(full_res_256, is_training)
+        flow = first_conv_layer(flow, is_training)
         layer_instances.append((first_conv_layer, flow))
 
         # crop 64x64x64 from 128x128x128
@@ -272,7 +272,7 @@ class Ownnet2e(BaseNet):
                 layer_instances.append((res_block, dilated.tensor))
         wide_flow = dilated.tensor
 
-        ### wide path convolution layer, only wide path (56 -> 28), dilated by 4
+        ### wide path convolution layer, only wide path (48->24), dilated by 4
         params = self.wide_layers[2]
         with DilatedTensor(wide_flow, dilation_factor=4) as dilated:
             for j in range(params['repeat']):
@@ -289,7 +289,7 @@ class Ownnet2e(BaseNet):
                 layer_instances.append((res_block, dilated.tensor))
         wide_flow = dilated.tensor
 
-        ### wide path res block 2, dilated by 3
+        ### wide path res block 2, dilated by 2
         params = self.wide_layers[3]
         with DilatedTensor(wide_flow, dilation_factor=2) as dilated:
             for j in range(params['repeat']):
@@ -307,34 +307,12 @@ class Ownnet2e(BaseNet):
                 layer_instances.append((res_block, dilated.tensor))
         wide_flow = dilated.tensor
 
-        ### wide path 3x3x3 deconvolution layer
-        params = self.wide_layers[4]
+        ### wide path upsampling 16->64
 
         up_shape = [4 * int(wide_flow.shape[i]) for i in (1, 2, 3)]
         upsample_op = LinearResizeLayer(up_shape)
-        # fc_layer = DeconvolutionalLayer(
-        #     n_output_chns=params['n_features'],
-        #     kernel_size=3,
-        #     stride=4,
-        #     acti_func=self.acti_func,
-        #     w_initializer=self.initializers['w'],
-        #     w_regularizer=self.regularizers['w'],
-        #     name='deconv')
-        # wide_flow = fc_layer(wide_flow, is_training)
         wide_flow = upsample_op(wide_flow)
         layer_instances.append((upsample_op, wide_flow))
-
-        # conv_layer = ConvolutionalLayer(
-        #     n_output_chns=params['n_features'],
-        #     kernel_size=params['kernel_size'],
-        #     acti_func=None,
-        #     w_initializer=self.initializers['w'],
-        #     w_regularizer=self.regularizers['w'],
-        #     name=params['name'])
-        # common_flow = conv_layer(wide_flow, is_training)
-        # layer_instances.append((conv_layer, wide_flow))
-
-
 
         ### resblocks, all kernels dilated by 1 (normal convolution)
         params = self.layers[1]
