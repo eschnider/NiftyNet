@@ -61,6 +61,20 @@ SUPPORTED_NETWORK = {
         'niftynet.network.ownnet2.Ownnet2',
     "ownnet2b":
         'niftynet.network.ownnet2b.Ownnet2b',
+    "ownnet2c":
+        'niftynet.network.ownnet2c.Ownnet2c',
+    "ownnet2d":
+        'niftynet.network.ownnet2d.Ownnet2d',
+    "ownnet2e":
+        'niftynet.network.ownnet2e.Ownnet2e',
+    "myunet":
+        'niftynet.network.myunet.MyUNet3D',
+    "myunet2":
+        'niftynet.network.myunet2.MyUNet3D2',
+    "myunet3":
+        'niftynet.network.myunet3.MyUNet3D3',
+    "myunetbig":
+        'niftynet.network.myunetbig.MyUNet3D2Big',
     "scalenet":
         'niftynet.network.scalenet.ScaleNet',
     "holisticnet":
