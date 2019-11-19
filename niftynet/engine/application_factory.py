@@ -57,6 +57,24 @@ SUPPORTED_NETWORK = {
         'niftynet.network.dense_vnet.DenseVNet',
     "deepmedic":
         'niftynet.network.deepmedic.DeepMedic',
+    "ownnet2":
+        'niftynet.network.ownnet2.Ownnet2',
+    "ownnet2b":
+        'niftynet.network.ownnet2b.Ownnet2b',
+    "ownnet2c":
+        'niftynet.network.ownnet2c.Ownnet2c',
+    "ownnet2d":
+        'niftynet.network.ownnet2d.Ownnet2d',
+    "ownnet2e":
+        'niftynet.network.ownnet2e.Ownnet2e',
+    "myunet":
+        'niftynet.network.myunet.MyUNet3D',
+    "myunet2":
+        'niftynet.network.myunet2.MyUNet3D2',
+    "myunet3":
+        'niftynet.network.myunet3.MyUNet3D3',
+    "myunetbig":
+        'niftynet.network.myunetbig.MyUNet3D2Big',
     "scalenet":
         'niftynet.network.scalenet.ScaleNet',
     "holisticnet":
@@ -95,6 +113,8 @@ SUPPORTED_LOSS_SEGMENTATION = {
         'niftynet.layer.loss_segmentation.generalised_dice_loss',
     "DicePlusXEnt":
         'niftynet.layer.loss_segmentation.dice_plus_xent_loss',
+    "SoftDice":
+        'niftynet.layer.loss_segmentation.dice_soft_loss',
     "WGDL":
         'niftynet.layer.loss_segmentation.generalised_wasserstein_dice_loss',
     "SensSpec":

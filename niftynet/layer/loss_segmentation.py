@@ -388,6 +388,114 @@ def dice_plus_xent_loss(prediction, ground_truth, weight_map=None):
 
     return loss_dice + loss_xent
 
+def dice_soft_loss(prediction, ground_truth, weight_map=None):
+    """
+    Inspired by the Function to calculate the loss used in https://arxiv.org/pdf/1809.10486.pdf,
+    no-new net, Isenseee et al (used to win the Medical Imaging Decathlon).
+
+    It's a soft Dice-loss, without the X entropy.
+
+    :param prediction: the logits
+    :param ground_truth: the segmentation ground truth
+    :param weight_map:
+    :return: the loss (Soft Dice)
+
+    """
+    num_classes = tf.shape(prediction)[-1]
+
+    prediction = tf.cast(prediction, tf.float32)
+
+    # Dice as according to the paper:
+    one_hot = labels_to_one_hot(ground_truth, num_classes=num_classes)
+    softmax_of_logits = tf.nn.softmax(prediction)
+
+    if weight_map is not None:
+        weight_map_nclasses = tf.tile(
+            tf.reshape(weight_map, [-1, 1]), [1, num_classes])
+        dice_numerator = 2.0 * tf.sparse_reduce_sum(
+            weight_map_nclasses * one_hot * softmax_of_logits,
+            reduction_axes=[0])
+        dice_denominator = \
+            tf.reduce_sum(weight_map_nclasses * softmax_of_logits,
+                          reduction_indices=[0]) + \
+            tf.sparse_reduce_sum(one_hot * weight_map_nclasses,
+                                 reduction_axes=[0])
+    else:
+        dice_numerator = 2.0 * tf.sparse_reduce_sum(
+            one_hot * softmax_of_logits, reduction_axes=[0])
+        dice_denominator = \
+            tf.reduce_sum(softmax_of_logits, reduction_indices=[0]) + \
+            tf.sparse_reduce_sum(one_hot, reduction_axes=[0])
+
+    epsilon = 0.00001
+
+    one_hot_summed = tf.sparse_reduce_sum(one_hot, reduction_axes=[0])
+    dice_class_normalisation = tf.to_float(tf.count_nonzero(one_hot_summed))
+    tf.print(dice_class_normalisation)
+    tf.logging.info(dice_class_normalisation)
+
+
+    print(dice_class_normalisation)
+    loss_dice = (dice_numerator + epsilon) / (dice_denominator + epsilon)
+    dice_print = tf.print(
+        dice_denominator, [dice_numerator, dice_denominator, loss_dice])
+
+    loss_dice = 1 - (tf.reduce_sum(loss_dice)/dice_class_normalisation)
+    loss_false_positives = false_positives(prediction, ground_truth, weight_map)
+
+    return 0.5*loss_dice + 0.5*loss_false_positives
+    # return 0.5*loss_dice
+
+def false_positives(prediction, ground_truth, weight_map=None):
+    """
+    Inspired by the Function to calculate the loss used in https://arxiv.org/pdf/1809.10486.pdf,
+    no-new net, Isenseee et al (used to win the Medical Imaging Decathlon).
+
+    It's a soft Dice-loss, without the X entropy.
+
+    :param prediction: the logits
+    :param ground_truth: the segmentation ground truth
+    :param weight_map:
+    :return: the loss (Soft Dice)
+
+    """
+    num_classes = tf.shape(prediction)[-1]
+    spatials = tf.shape(prediction)[-2]
+    spatials= tf.cast(spatials, tf.float32)
+
+
+    prediction = tf.cast(prediction, tf.float32)
+
+    # Dice as according to the paper:
+    one_hot = labels_to_one_hot(ground_truth, num_classes=num_classes)
+    softmax_of_logits = tf.nn.softmax(prediction)
+
+    if weight_map is not None:
+        weight_map_nclasses = tf.tile(
+            tf.reshape(weight_map, [-1, 1]), [1, num_classes])
+        dice_numerator = spatials - tf.reduce_sum(
+            weight_map_nclasses * softmax_of_logits,
+            reduction_axes=[0])
+        dice_denominator = spatials
+    else:
+        dice_numerator = spatials - tf.reduce_sum(softmax_of_logits, axis=[0])
+        dice_denominator = spatials
+
+    epsilon = 0.00001
+
+    one_hot_summed = tf.sparse_reduce_sum(one_hot, axis=[0])
+    existing_classes = tf.sparse_reduce_max(one_hot, axis=[0])
+    absent_classes = 1-existing_classes
+    num_classes_float = tf.cast(num_classes, tf.float32)
+    dice_class_normalisation = tf.to_float(tf.count_nonzero(absent_classes))
+
+    loss_dice = (dice_numerator + epsilon) / (dice_denominator + epsilon)
+    tf.logging.info(loss_dice)
+
+    dice_class_normalisation = tf.maximum(tf.to_float(1), dice_class_normalisation)
+
+    return 1 - (tf.reduce_sum(loss_dice)/dice_class_normalisation)
+
 
 def sensitivity_specificity_loss(prediction,
                                  ground_truth,
