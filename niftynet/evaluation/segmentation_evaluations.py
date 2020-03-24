@@ -25,7 +25,6 @@ by Evaluation classes
 """
 
 from __future__ import absolute_import, division, print_function
-
 import numpy as np
 import pandas as pd
 from scipy import ndimage
@@ -73,8 +72,10 @@ class PerComponentEvaluation(CachedSubanalysisEvaluation):
             binarizer = cached_label_binarizer(task['label'],
                                                self.app_param.output_prob)
             seg, ref = binarizer(data)
+            memoized_confmatrix = memoize(conf_matr_mem)
+            conf_matrix = memoized_confmatrix(subject=subject_id, label=task['label'], seg=seg, ref=ref)
             metric_dict = {'subject_id': subject_id, 'label': task['label']}
-            metric_dict.update(self.metric_dict_from_binarized(seg, ref))
+            metric_dict.update(self.metric_dict_from_binarized(seg, ref, conf_matrix))
             pdf = pd.DataFrame.from_records([metric_dict], ('subject_id', 'label'))
             return [pdf]
         elif 'cc_labels' in task:
@@ -90,12 +91,12 @@ class PerComponentEvaluation(CachedSubanalysisEvaluation):
             return [pdf]
         return []
 
-
-    def metric_dict_from_binarized(self, seg, ref):
+    def metric_dict_from_binarized(self, seg, ref, conf_matrix=None):
         """
         Computes a metric from a binarized mask
         :param seg: numpy array with binary mask from inferred segmentation
         :param ref: numpy array with binary mask from reference segmentation
+        :param conf_matrix: numpy 2x2 array confusion matrix
         :return: a dictionary of metric_name:metric_value
         """
         raise NotImplementedError('Not implemented in abstract base class')
@@ -104,21 +105,23 @@ class PerComponentEvaluation(CachedSubanalysisEvaluation):
 class PerComponentScalarEvaluation(PerComponentEvaluation):
     """ This class simplifies the implementation when the metric just returns a
     single scalar with the same name as the class name"""
+
     def __init__(self, *args, **kwargs):
         super(PerComponentScalarEvaluation, self).__init__(*args,
                                                            **kwargs)
         self.metric_name = self.__class__.__name__
 
-    def metric_dict_from_binarized(self, seg, ref):
+    def metric_dict_from_binarized(self, seg, ref, conf_matrix=None):
         """ Wrap computed metric in dictionary for parent class """
-        metric_value = self.metric_from_binarized(seg, ref)
+        metric_value = self.metric_from_binarized(seg, ref, conf_matrix)
         return {self.metric_name: metric_value}
 
-    def metric_from_binarized(self, seg, ref):
+    def metric_from_binarized(self, seg, ref, conf_matrix=None):
         """
         Computer scalar metric value
         :param seg: numpy array with binary mask from inferred segmentation
         :param ref: numpy array with binary mask from reference segmentation
+        :param conf_matrix: numpy 2x2 array, confusion matrix
         :return: scalar metric value
         """
 
@@ -140,6 +143,7 @@ class PerComponentScalarEvaluation(PerComponentEvaluation):
                 pass
         return aggregations
 
+
 class BuiltinOverlapEvaluation(PerComponentScalarEvaluation):
     """
     Wrapper class to encode many similar overlap metrics that can be computed
@@ -147,7 +151,8 @@ class BuiltinOverlapEvaluation(PerComponentScalarEvaluation):
     Metrics computed in compute_many_overlap_metrics can be wrapped by
     overriding self.metric_name
     """
-    def metric_from_binarized(self, seg, ref):
+
+    def metric_from_binarized(self, seg, ref, M):
         """
         Computes a metric from a binarized mask by computing a confusion
         matrix and then delegating the metric computation
@@ -155,13 +160,8 @@ class BuiltinOverlapEvaluation(PerComponentScalarEvaluation):
         :param ref: numpy array with binary mask from reference segmentation
         :return: scalar metric value
         """
-        lnot = np.logical_not
-        land = np.logical_and
-        conf_mat = np.array([[np.sum(land(lnot(seg), lnot(ref))),
-                              np.sum(land(lnot(seg), (ref)))],
-                             [np.sum(land((seg), lnot(ref))),
-                              np.sum(land((seg), (ref)))]])
-        return self.metric_from_confusion_matrix(conf_mat)
+
+        return self.metric_from_confusion_matrix(M)
 
     def metric_from_confusion_matrix(self, confusion_matrix):
         """
@@ -171,7 +171,17 @@ class BuiltinOverlapEvaluation(PerComponentScalarEvaluation):
         """
 
 
-#pylint: disable=missing-docstring,invalid-name
+def confusion_matrix(seg, ref):
+    lnot = np.logical_not
+    land = np.logical_and
+    conf_mat = np.array([[np.sum(land(lnot(seg), lnot(ref))),
+                          np.sum(land(lnot(seg), (ref)))],
+                         [np.sum(land((seg), lnot(ref))),
+                          np.sum(land((seg), (ref)))]])
+    return conf_mat
+
+
+# pylint: disable=missing-docstring,invalid-name
 class n_pos_ref(BuiltinOverlapEvaluation):
     def metric_from_confusion_matrix(self, M):
         return M[0, 1] + M[1, 1]
@@ -272,13 +282,13 @@ Jaccard = jaccard
 class informedness(BuiltinOverlapEvaluation):
     def metric_from_confusion_matrix(self, M):
         return M[1, 1] / (M[0, 1] + M[1, 1]) + \
-                             M[0, 0] / (M[0, 0] + M[1, 0]) - 1
+               M[0, 0] / (M[0, 0] + M[1, 0]) - 1
 
 
 class markedness(BuiltinOverlapEvaluation):
     def metric_from_confusion_matrix(self, M):
         return M[1, 1] / (M[1, 0] + M[1, 1]) + \
-                           M[0, 0] / (M[0, 0] + M[0, 1]) - 1
+               M[0, 0] / (M[0, 0] + M[0, 1]) - 1
 
 
 class vol_diff(BuiltinOverlapEvaluation):
@@ -313,7 +323,7 @@ class hausdorff95_distance(PerComponentScalarEvaluation):
                        np.percentile(ref_values, 95)])
 
 
-#pylint: enable=missing-docstring,invalid-name
+# pylint: enable=missing-docstring,invalid-name
 # Helper functions
 @CachedFunction
 def cached_label_binarizer(label, output_prob):
@@ -331,6 +341,7 @@ def cached_label_binarizer(label, output_prob):
     argmax is used first to compute a label map)
     :return: a function for computing a binary label map
     """
+
     @CachedFunctionByID
     def binarizer(data):
         """
@@ -346,6 +357,50 @@ def cached_label_binarizer(label, output_prob):
         return out == label, data['label'] == label
 
     return binarizer
+
+
+# pylint: enable=missing-docstring,invalid-name
+# Helper functions
+@CachedFunction
+def cached_label_confusion_matrix(label):
+    @CachedFunctionByID
+    def confusion_matrixer(seg, ref):
+        lnot = np.logical_not
+        land = np.logical_and
+        conf_mat = np.array([[np.sum(land(lnot(seg), lnot(ref))),
+                              np.sum(land(lnot(seg), (ref)))],
+                             [np.sum(land((seg), lnot(ref))),
+                              np.sum(land((seg), (ref)))]])
+        return conf_mat
+
+    return confusion_matrixer
+
+
+cache_conf_matr = dict()
+
+
+def memoize(func):
+    def memoized_func(**kwargs):
+        if kwargs['subject'] in cache_conf_matr:
+            if kwargs['label'] in cache_conf_matr[kwargs['subject']]:
+                return cache_conf_matr[kwargs['subject']][kwargs['label']]
+        else:
+            cache_conf_matr[kwargs['subject']] = {}
+        result = func(kwargs['subject'], kwargs['label'], kwargs['seg'], kwargs['ref'])
+        cache_conf_matr[kwargs['subject']][kwargs['label']] = result
+        return result
+
+    return memoized_func
+
+
+def conf_matr_mem(subject, label, seg, ref):
+    lnot = np.logical_not
+    land = np.logical_and
+    conf_mat = np.array([[np.sum(land(lnot(seg), lnot(ref))),
+                          np.sum(land(lnot(seg), (ref)))],
+                         [np.sum(land((seg), lnot(ref))),
+                          np.sum(land((seg), (ref)))]])
+    return conf_mat
 
 
 @CachedFunction
@@ -366,6 +421,7 @@ def cached_cc_binarizer(cc_labels, output_prob):
     :return: a function for computing a binary label map pair
 
     """
+
     @CachedFunctionByID
     def binarizer(data):
         """
@@ -386,6 +442,7 @@ def cached_cc_binarizer(cc_labels, output_prob):
         return cc_seg_in, cc_ref_in
 
     return binarizer
+
 
 def union_of_seg_for_each_ref_cc(blobs_seg, blobs_ref):
     """
@@ -459,7 +516,6 @@ def connected_components(seg, ref, output_prob, neigh=8):
 
     return (blobs_ref[0][:, :, :, np.newaxis, np.newaxis], blobs_ref[1]), \
            (blobs_seg[0][:, :, :, np.newaxis, np.newaxis], blobs_seg[1]),
-
 
 # TODO
 # per subject connected component related metrics
