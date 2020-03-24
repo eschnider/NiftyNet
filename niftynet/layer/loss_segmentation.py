@@ -16,6 +16,19 @@ M_tree = np.array([[0., 1., 1., 1., 1.],
                    [1., 0.2, 0.6, 0., 0.5],
                    [1., 0.5, 0.7, 0.5, 0.]], dtype=np.float64)
 
+SIZE_PRIORS = np.array(
+    [30181425, 6482, 1649, 5786, 2615, 3624, 7625, 1288, 466, 69, 263, 36, 2005, 1425, 3825, 3129, 337,
+     3585, 1381, 51890, 13949, 229, 684, 2266, 47, 1700, 176, 67, 453, 4664, 4284, 2058, 7449, 189, 109,
+     3515, 419, 724, 73, 5081, 6987, 8169, 14078, 202, 1228, 33, 420, 430, 1566, 310, 5678, 1910, 3140,
+     1694, 1378, 20423, 171, 721, 12515, 11771, 35204, 2449, 39, 971, 179, 191, 352, 4079, 325, 237,
+     142, 52, 244, 3202, 3507, 1532, 1703, 995, 225, 72, 349, 404, 981, 3445, 611, 57, 47, 2629, 319,
+     178, 420, 1699, 735, 61884, 540, 421, 5833, 422, 6046, 29, 155, 46, 192, 223, 893, 352, 1408, 79,
+     2905, 11965, 1776, 80, 398, 261, 2231, 5868, 12143, 5417, 3130, 119, 5929, 191, 2694, 1441, 29, 68,
+     5572, 3894, 7, 1372, 941, 637, 541, 560, 63742, 535, 168, 4222, 956, 21137, 274, 2945, 4073, 770,
+     212, 72673, 8023, 2108, 110, 334, 1498, 1850, 115, 48, 1693, 49, 2337, 3111, 1655, 7066, 3617, 64,
+     6156, 342, 2214, 3670, 532, 1642, 1719, 328, 1438, 30, 7699, 9587, 61766, 61, 2763, 2564, 130, 274,
+     594, 362, 42, 196, 51784, 2628, 378, 101, 2515, 132, 138, 62962, 140, 5113.8])
+
 
 class LossFunction(Layer):
     def __init__(self,
@@ -275,6 +288,34 @@ def volume_enforcement_fin(prediction, ground_truth, weight_map=None,
                                             - (pred_red+eps)/(gt_red+eps))))
 
 
+def volume_size_loss(prediction, ground_truth, weight_map=None):
+    """
+    A loss function that takes into account how much volume any given bone has on average. It gives a penalty if any
+    given class has more pixels than 1*1 times the reference volume of the SIZE_PRIORS.
+    :param prediction:
+    :param ground_truth:
+    :param weight_map:
+    :return:
+    """
+    prediction = tf.cast(prediction, tf.float32)
+    if len(ground_truth.shape) == len(prediction.shape):
+        ground_truth = ground_truth[..., -1]
+    one_hot = labels_to_one_hot(ground_truth, tf.shape(prediction)[-1])
+
+    if weight_map is not None:
+        tf.logging.warning('Weight map specified but not used.')
+
+    ref_vol = tf.sparse_reduce_sum(one_hot, reduction_axes=[0])
+    ref_vol = tf.maximum(ref_vol, tf.constant(SIZE_PRIORS, dtype=tf.float32))
+    upper_limit = ref_vol * 1.1
+    seg_vol = tf.reduce_sum(prediction, 0)
+    difference_upper = tf.maximum(seg_vol - upper_limit, 0)
+    difference_upper = difference_upper
+    difference_lower = 0
+    difference = difference_upper ** 2 + difference_lower ** 2
+    difference = difference / 262144  # 262144 =64x64x64
+    return tf.reduce_mean(difference)
+
 
 def generalised_dice_loss(prediction,
                           ground_truth,
@@ -341,6 +382,12 @@ def generalised_dice_loss(prediction,
     return 1 - generalised_dice_score
 
 
+def dice_plus_xent_plus_volume_size_loss(prediction, ground_truth, weight_map=None):
+    loss_dice_plus_xent = dice_plus_xent_loss(prediction, ground_truth)
+    loss_volume_size = volume_size_loss(prediction, ground_truth)
+    return loss_dice_plus_xent + loss_volume_size
+
+
 def dice_plus_xent_loss(prediction, ground_truth, weight_map=None):
     """
     Function to calculate the loss used in https://arxiv.org/pdf/1809.10486.pdf,
@@ -387,6 +434,113 @@ def dice_plus_xent_loss(prediction, ground_truth, weight_map=None):
         dice_denominator, [dice_numerator, dice_denominator, loss_dice])
 
     return loss_dice + loss_xent
+
+def dice_soft_loss(prediction, ground_truth, weight_map=None):
+    """
+    Inspired by the Function to calculate the loss used in https://arxiv.org/pdf/1809.10486.pdf,
+    no-new net, Isenseee et al (used to win the Medical Imaging Decathlon).
+
+    It's a soft Dice-loss, without the X entropy.
+
+    :param prediction: the logits
+    :param ground_truth: the segmentation ground truth
+    :param weight_map:
+    :return: the loss (Soft Dice)
+
+    """
+    num_classes = tf.shape(prediction)[-1]
+
+    prediction = tf.cast(prediction, tf.float32)
+
+    # Dice as according to the paper:
+    one_hot = labels_to_one_hot(ground_truth, num_classes=num_classes)
+    softmax_of_logits = tf.nn.softmax(prediction)
+
+    if weight_map is not None:
+        weight_map_nclasses = tf.tile(
+            tf.reshape(weight_map, [-1, 1]), [1, num_classes])
+        dice_numerator = 2.0 * tf.sparse_reduce_sum(
+            weight_map_nclasses * one_hot * softmax_of_logits,
+            reduction_axes=[0])
+        dice_denominator = \
+            tf.reduce_sum(weight_map_nclasses * softmax_of_logits,
+                          reduction_indices=[0]) + \
+            tf.sparse_reduce_sum(one_hot * weight_map_nclasses,
+                                 reduction_axes=[0])
+    else:
+        dice_numerator = 2.0 * tf.sparse_reduce_sum(
+            one_hot * softmax_of_logits, reduction_axes=[0])
+        dice_denominator = \
+            tf.reduce_sum(softmax_of_logits, reduction_indices=[0]) + \
+            tf.sparse_reduce_sum(one_hot, reduction_axes=[0])
+
+    epsilon = 0.00001
+
+    one_hot_summed = tf.sparse_reduce_sum(one_hot, reduction_axes=[0])
+    dice_class_normalisation = tf.to_float(tf.count_nonzero(one_hot_summed))
+    tf.print(dice_class_normalisation)
+    tf.logging.info(dice_class_normalisation)
+
+    print(dice_class_normalisation)
+    loss_dice = (dice_numerator + epsilon) / (dice_denominator + epsilon)
+    dice_print = tf.print(
+        dice_denominator, [dice_numerator, dice_denominator, loss_dice])
+
+    loss_dice = 1 - (tf.reduce_sum(loss_dice)/dice_class_normalisation)
+    loss_false_positives = false_positives(prediction, ground_truth, weight_map)
+
+    return 0.5*loss_dice + 0.5*loss_false_positives
+    # return 0.5*loss_dice
+
+def false_positives(prediction, ground_truth, weight_map=None):
+    """
+    Inspired by the Function to calculate the loss used in https://arxiv.org/pdf/1809.10486.pdf,
+    no-new net, Isenseee et al (used to win the Medical Imaging Decathlon).
+
+    It's a soft Dice-loss, without the X entropy.
+
+    :param prediction: the logits
+    :param ground_truth: the segmentation ground truth
+    :param weight_map:
+    :return: the loss (Soft Dice)
+
+    """
+    num_classes = tf.shape(prediction)[-1]
+    spatials = tf.shape(prediction)[-2]
+    spatials= tf.cast(spatials, tf.float32)
+
+
+    prediction = tf.cast(prediction, tf.float32)
+
+    # Dice as according to the paper:
+    one_hot = labels_to_one_hot(ground_truth, num_classes=num_classes)
+    softmax_of_logits = tf.nn.softmax(prediction)
+
+    if weight_map is not None:
+        weight_map_nclasses = tf.tile(
+            tf.reshape(weight_map, [-1, 1]), [1, num_classes])
+        dice_numerator = spatials - tf.reduce_sum(
+            weight_map_nclasses * softmax_of_logits,
+            reduction_axes=[0])
+        dice_denominator = spatials
+    else:
+        dice_numerator = spatials - tf.reduce_sum(softmax_of_logits, axis=[0])
+        dice_denominator = spatials
+
+    epsilon = 0.00001
+
+    one_hot_summed = tf.sparse_reduce_sum(one_hot, axis=[0])
+    existing_classes = tf.sparse_reduce_max(one_hot, axis=[0])
+    absent_classes = 1-existing_classes
+    num_classes_float = tf.cast(num_classes, tf.float32)
+    dice_class_normalisation = tf.to_float(tf.count_nonzero(absent_classes))
+
+    loss_dice = (dice_numerator + epsilon) / (dice_denominator + epsilon)
+    tf.logging.info(loss_dice)
+
+    dice_class_normalisation = tf.maximum(tf.to_float(1), dice_class_normalisation)
+
+    return 1 - (tf.reduce_sum(loss_dice)/dice_class_normalisation)
 
 
 def sensitivity_specificity_loss(prediction,
