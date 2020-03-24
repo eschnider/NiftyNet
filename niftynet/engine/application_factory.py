@@ -115,6 +115,8 @@ SUPPORTED_LOSS_SEGMENTATION = {
         'niftynet.layer.loss_segmentation.dice_plus_xent_plus_volume_size_loss',
     "DicePlusXEnt":
         'niftynet.layer.loss_segmentation.dice_plus_xent_loss',
+    "DicePlusXEntStochastic":
+        'niftynet.layer.loss_segmentation.stochastic_dice_plus_xent_loss',
     "SoftDice":
         'niftynet.layer.loss_segmentation.dice_soft_loss',
     "WGDL":

@@ -435,6 +435,90 @@ def dice_plus_xent_loss(prediction, ground_truth, weight_map=None):
 
     return loss_dice + loss_xent
 
+
+def stochastic_dice_plus_xent_loss(prediction, ground_truth, weight_map=None):
+    """
+    It is the sum of the cross-entropy and the Dice-loss, where only one class at a time is used for computation of the
+    Dice loss. The cross-entropy goes over all classes as before.
+
+    :param prediction: the logits
+    :param ground_truth: the segmentation ground truth
+    :param weight_map:
+    :return: the loss (cross_entropy + Dice)
+
+    """
+
+    def one_hot_1class(ground_truth_one_class, ground_truth_boolean_mask):
+        input_shape = tf.shape(ground_truth_one_class)
+        output_shape = tf.concat(
+            [input_shape, tf.reshape(1, (1,))], 0)
+
+        # squeeze the spatial shape
+        ground_truth_one_class = tf.reshape(ground_truth_one_class, (-1,))
+        # shape of squeezed output
+        dense_shape = tf.stack([tf.shape(ground_truth_one_class)[0], 1], 0)
+
+        # create a rank-2 sparse tensor
+        ground_truth_one_class = tf.zeros_like(ground_truth_one_class, dtype=tf.int64)
+        ground_truth_one_class = tf.boolean_mask(ground_truth_one_class, ground_truth_boolean_mask)
+        ids = tf.range(tf.to_int64(dense_shape[0]), dtype=tf.int64)
+        ids = tf.boolean_mask(ids, ground_truth_boolean_mask)
+        ids = tf.stack([ids, ground_truth_one_class], axis=1)
+        one_hot = tf.SparseTensor(
+            indices=ids,
+            values=tf.ones_like(ground_truth_one_class, dtype=tf.float32),
+            dense_shape=tf.to_int64(dense_shape))
+
+        # resume the spatial dims
+        one_hot = tf.sparse_reshape(one_hot, output_shape)
+        return one_hot
+
+    num_classes = tf.shape(prediction)[-1]
+
+    chosen_class = np.random.randint(1, 126)  # don't want to sample background, so exclude 0
+
+    prediction = tf.cast(prediction, tf.float32)
+
+    slicy_prediction = prediction[:, chosen_class]
+    slicy_prediction = tf.cast(slicy_prediction, tf.float32)
+    ground_truth_boolean_mask = tf.math.equal(ground_truth, chosen_class)
+    ground_truth_floaty_slice = tf.cast(ground_truth_boolean_mask, tf.float32)
+
+    loss_xent = cross_entropy(slicy_prediction, chosen_class * ground_truth_floaty_slice, weight_map=weight_map)
+    # loss_xent = cross_entropy(prediction, ground_truth, weight_map=weight_map)
+
+    # Dice as according to the paper:
+    one_hot = one_hot_1class(ground_truth_floaty_slice, ground_truth_boolean_mask)
+    # one_hot = labels_to_one_hot(ground_truth, num_classes=num_classes)
+    softmax_of_logits = tf.nn.softmax(slicy_prediction)
+    softmax_of_logits = tf.expand_dims(softmax_of_logits, axis=1)
+
+    # softmax_of_logits = tf.nn.softmax(prediction)
+
+    if weight_map is not None:
+        weight_map_nclasses = tf.tile(
+            tf.reshape(weight_map, [-1, 1]), [1, num_classes])
+        dice_numerator = 2.0 * tf.sparse_reduce_sum(
+            weight_map_nclasses * one_hot * softmax_of_logits,
+            reduction_axes=[0])
+        dice_denominator = \
+            tf.reduce_sum(weight_map_nclasses * softmax_of_logits,
+                          reduction_indices=[0]) + \
+            tf.sparse_reduce_sum(one_hot * weight_map_nclasses,
+                                 reduction_axes=[0])
+    else:
+        dice_numerator = 2.0 * tf.sparse_reduce_sum(
+            one_hot * softmax_of_logits, reduction_axes=[0])
+        dice_denominator = \
+            tf.reduce_sum(softmax_of_logits, reduction_indices=[0]) + \
+            tf.sparse_reduce_sum(one_hot, reduction_axes=[0])
+
+    epsilon = 0.00001
+    loss_dice = -(dice_numerator + epsilon) / (dice_denominator + epsilon)
+
+    return loss_dice + loss_xent
+
+
 def dice_soft_loss(prediction, ground_truth, weight_map=None):
     """
     Inspired by the Function to calculate the loss used in https://arxiv.org/pdf/1809.10486.pdf,
