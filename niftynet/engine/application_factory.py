@@ -111,6 +111,8 @@ SUPPORTED_LOSS_SEGMENTATION = {
         'niftynet.layer.loss_segmentation.tversky',
     "GDSC":
         'niftynet.layer.loss_segmentation.generalised_dice_loss',
+    "DicePlusXEntPlusVol":
+        'niftynet.layer.loss_segmentation.dice_plus_xent_plus_volume_size_loss',
     "DicePlusXEnt":
         'niftynet.layer.loss_segmentation.dice_plus_xent_loss',
     "SoftDice":
