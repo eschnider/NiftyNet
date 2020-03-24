@@ -205,15 +205,15 @@ def undecided_loss(prediction, ground_truth, weight_map=None):
     :param weight_map:
     :return:
     """
-    ratio_undecided = 1.0/tf.cast(tf.shape(prediction)[-1], tf.float32)
+    ratio_undecided = 1.0 / tf.cast(tf.shape(prediction)[-1], tf.float32)
     res_undecided = tf.reciprocal(tf.reduce_mean(tf.abs(prediction -
-                                                 ratio_undecided), -1) + 0.0001)
+                                                        ratio_undecided), -1) + 0.0001)
     if weight_map is None:
         return tf.reduce_mean(res_undecided)
     else:
         res_undecided = tf.Print(tf.cast(res_undecided, tf.float32), [tf.shape(
             res_undecided), tf.shape(weight_map), tf.shape(
-                res_undecided*weight_map)], message='test_printshape_und')
+            res_undecided * weight_map)], message='test_printshape_und')
         return tf.reduce_sum(res_undecided * weight_map /
                              tf.reduce_sum(weight_map))
 
@@ -238,8 +238,8 @@ def volume_enforcement(prediction, ground_truth, weight_map=None, eps=0.001,
     gt_red = tf.sparse_reduce_sum(one_hot, 0)
     pred_red = tf.reduce_sum(prediction, 0)
     if hard:
-        pred_red  = tf.sparse_reduce_sum(labels_to_one_hot(tf.argmax(
-            prediction,-1),tf.shape(prediction)[-1]), 0)
+        pred_red = tf.sparse_reduce_sum(labels_to_one_hot(tf.argmax(
+            prediction, -1), tf.shape(prediction)[-1]), 0)
 
     if weight_map is not None:
         n_classes = prediction.shape[1].value
@@ -250,8 +250,8 @@ def volume_enforcement(prediction, ground_truth, weight_map=None, eps=0.001,
                                       reduction_axes=[0])
         pred_red = tf.reduce_sum(weight_map_nclasses * prediction, 0)
 
-    return tf.reduce_mean(tf.sqrt(tf.square((gt_red+eps)/(pred_red+eps) -
-                                            (pred_red+eps)/(gt_red+eps))))
+    return tf.reduce_mean(tf.sqrt(tf.square((gt_red + eps) / (pred_red + eps) -
+                                            (pred_red + eps) / (gt_red + eps))))
 
 
 def volume_enforcement_fin(prediction, ground_truth, weight_map=None,
@@ -272,7 +272,7 @@ def volume_enforcement_fin(prediction, ground_truth, weight_map=None,
     one_hot = labels_to_one_hot(ground_truth, tf.shape(prediction)[-1])
     gt_red = tf.sparse_reduce_sum(one_hot, 0)
     pred_red = tf.sparse_reduce_sum(labels_to_one_hot(tf.argmax(
-            prediction,-1),tf.shape(prediction)[-1]), 0)
+        prediction, -1), tf.shape(prediction)[-1]), 0)
 
     if weight_map is not None:
         n_classes = prediction.shape[1].value
@@ -284,8 +284,8 @@ def volume_enforcement_fin(prediction, ground_truth, weight_map=None,
         pred_red = tf.sparse_reduce_sum(labels_to_one_hot(tf.argmax(
             prediction, -1), tf.shape(prediction)[-1]) * weight_map_nclasses, 0)
 
-    return tf.reduce_mean(tf.sqrt(tf.square((gt_red+eps)/(pred_red+eps)
-                                            - (pred_red+eps)/(gt_red+eps))))
+    return tf.reduce_mean(tf.sqrt(tf.square((gt_red + eps) / (pred_red + eps)
+                                            - (pred_red + eps) / (gt_red + eps))))
 
 
 def volume_size_loss(prediction, ground_truth, weight_map=None):
@@ -486,11 +486,12 @@ def dice_soft_loss(prediction, ground_truth, weight_map=None):
     dice_print = tf.print(
         dice_denominator, [dice_numerator, dice_denominator, loss_dice])
 
-    loss_dice = 1 - (tf.reduce_sum(loss_dice)/dice_class_normalisation)
+    loss_dice = 1 - (tf.reduce_sum(loss_dice) / dice_class_normalisation)
     loss_false_positives = false_positives(prediction, ground_truth, weight_map)
 
-    return 0.5*loss_dice + 0.5*loss_false_positives
+    return 0.5 * loss_dice + 0.5 * loss_false_positives
     # return 0.5*loss_dice
+
 
 def false_positives(prediction, ground_truth, weight_map=None):
     """
@@ -507,8 +508,7 @@ def false_positives(prediction, ground_truth, weight_map=None):
     """
     num_classes = tf.shape(prediction)[-1]
     spatials = tf.shape(prediction)[-2]
-    spatials= tf.cast(spatials, tf.float32)
-
+    spatials = tf.cast(spatials, tf.float32)
 
     prediction = tf.cast(prediction, tf.float32)
 
@@ -531,7 +531,7 @@ def false_positives(prediction, ground_truth, weight_map=None):
 
     one_hot_summed = tf.sparse_reduce_sum(one_hot, axis=[0])
     existing_classes = tf.sparse_reduce_max(one_hot, axis=[0])
-    absent_classes = 1-existing_classes
+    absent_classes = 1 - existing_classes
     num_classes_float = tf.cast(num_classes, tf.float32)
     dice_class_normalisation = tf.to_float(tf.count_nonzero(absent_classes))
 
@@ -540,7 +540,7 @@ def false_positives(prediction, ground_truth, weight_map=None):
 
     dice_class_normalisation = tf.maximum(tf.to_float(1), dice_class_normalisation)
 
-    return 1 - (tf.reduce_sum(loss_dice)/dice_class_normalisation)
+    return 1 - (tf.reduce_sum(loss_dice) / dice_class_normalisation)
 
 
 def sensitivity_specificity_loss(prediction,

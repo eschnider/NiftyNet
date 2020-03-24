@@ -79,6 +79,7 @@ class RandomElasticDeformationLayer(RandomisedLayer):
         self._bspline_transformation = sitk.BSplineTransformInitializer(
             itkimg, trans_from_domain_mesh_size)
 
+
         params = self._bspline_transformation.GetParameters()
         params_numpy = np.asarray(params, dtype=float)
         params_numpy = params_numpy + np.random.randn(
